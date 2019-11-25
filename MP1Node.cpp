@@ -109,6 +109,11 @@ int MP1Node::initThisNode(Address *joinaddr) {
 	memberNode->timeOutCounter = -1;
     initMemberListTable(memberNode);
 
+    // Add reference to memberNode's self to membership list
+    MemberListEntry myEntry = MemberListEntry(id, port, memberNode->heartbeat, par->getcurrtime());
+    memberNode->memberList.push_back(myEntry);
+    memberNode->myPos = memberNode->memberList.begin();
+
     return 0;
 }
 
@@ -160,9 +165,8 @@ int MP1Node::introduceSelfToGroup(Address *joinaddr) {
  * DESCRIPTION: Wind up this node and clean up state
  */
 int MP1Node::finishUpThisNode(){
-   /*
-    * Your code goes here
-    */
+   memberNode->inGroup = false;
+   initMemberListTable(memberNode);
 }
 
 /**
@@ -215,9 +219,130 @@ void MP1Node::checkMessages() {
  * DESCRIPTION: Message handler for different message types
  */
 bool MP1Node::recvCallBack(void *env, char *data, int size ) {
-	/*
-	 * Your code goes here
-	 */
+    long heartbeat;
+    Address addr;
+    MessageHdr *msg = (MessageHdr *) data;
+    char * restOfMessage = (char *)(msg + 1);
+
+    switch (msg->msgType)
+    {
+    case JOINREQ:
+        memcpy(&(addr.addr), restOfMessage, sizeof(memberNode->addr.addr));
+        
+        // cout<<"Received join req at node: ";
+        // printAddress(&memberNode->addr);
+        // cout<< " from node: ";
+        // printAddress(&addr);
+        // cout << endl;
+
+        memcpy(&heartbeat, restOfMessage + 1 + sizeof(memberNode->addr.addr), sizeof(heartbeat));
+        addMember(addr, heartbeat);
+        gossipMembershipToNode(JOINREP, &addr);
+        gossipToAllNodes();
+        break;
+    case JOINREP:
+        // cout<<"Received join reply at node: ";
+        // printAddress(&memberNode->addr);
+        // cout<< endl;
+
+
+        processJoinReply(restOfMessage, size - sizeof(MessageHdr));
+        break;
+    case MEMSHPLIST:
+        updateMemberList(restOfMessage, size - sizeof(MessageHdr));
+        break;
+    default:
+        break;
+    }
+}
+
+void MP1Node::updateMemberList(char * message, int size) {
+    size_t memberListLength;
+    // Read size of member list, move message pointer
+    memcpy(&memberListLength, message, sizeof(size_t));
+    message+= sizeof(size_t);
+
+    MemberListEntry nextEntry;
+    for (int i = 0; i < memberListLength; i++) {
+        memcpy(&nextEntry, message, sizeof(MemberListEntry));
+        addOrUpdateMember(nextEntry);
+        message += sizeof(MemberListEntry);
+    }
+}
+
+void MP1Node::addOrUpdateMember(MemberListEntry entry) {
+    for (std::vector<MemberListEntry>::iterator it = memberNode->memberList.begin(); it != memberNode->memberList.end(); ++it) {
+        if (it->getid() == entry.getid() && it->getport() == entry.getport()) {
+            if (it->getheartbeat() < entry.getheartbeat()) {
+                it->setheartbeat(entry.getheartbeat());
+                it->settimestamp(par->getcurrtime());
+            }
+            return;
+        }
+    }
+
+    // Address a;
+    // addressFromIdAndPort(&a, entry.getid(), entry.getport());
+    // cout<<"Adding member: ";
+    // printAddress(&a);
+    addMember(entry.getid(), entry.getport(), entry.getheartbeat());
+}
+
+void MP1Node::processJoinReply(char * message, int size) {
+    size_t memberListLength;
+    // Confirm we are now in the group
+    memberNode->inGroup = true;
+
+    // Read size of member list, move message pointer
+    memcpy(&memberListLength, message, sizeof(size_t));
+    message+= sizeof(size_t);
+    updateMemberList((message + sizeof(size_t)), memberListLength);
+}
+
+void MP1Node::gossipMembershipToNode(MsgTypes msgType, Address *addr) {
+    MessageHdr *msg;
+    size_t memberListEntrySize = sizeof(MemberListEntry);
+    size_t memberListLength = memberNode->memberList.size();
+    
+    // header + member list length + membership list
+    size_t msgsize = sizeof(MessageHdr) + sizeof(long) + (memberListLength * memberListEntrySize);
+    msg = (MessageHdr *) malloc(msgsize * sizeof(char));
+    msg->msgType = msgType;
+    memcpy((char *)(msg+1) , &memberListLength, sizeof(size_t));
+
+    // iterate through memberlist 
+    // append entry info to list
+    int counter = 0;
+    for (std::vector<MemberListEntry>::iterator it = memberNode->memberList.begin(); it != memberNode->memberList.end(); ++it) {
+        // Already offset by MessageHdr + memberListLength
+        // increment offset by MemberListEntry size for each entry
+        memcpy((char *)(msg+1) + sizeof(size_t) + sizeof(MemberListEntry) * counter, &(*it), sizeof(MemberListEntry));
+        counter++;
+    }
+
+    emulNet->ENsend(&memberNode->addr, addr, (char *) msg, msgsize);
+
+    free(msg);
+}
+
+void MP1Node::addMember(int id, int port, long heartbeat) {
+    memberNode->nnb += 1;
+    MemberListEntry newMember = MemberListEntry(
+        id,
+        port,
+        heartbeat,
+        par->getcurrtime()
+    );
+    memberNode->memberList.push_back(newMember);
+    Address addr;
+    addressFromIdAndPort(&addr, id, port);
+    log->logNodeAdd(&memberNode->addr, &addr);
+}
+
+void MP1Node::addMember(Address addr, long heartbeat) {
+    int id = *(int*)(&addr.addr[0]);
+	short port = *(short*)(&addr.addr[4]);
+    addMember(id, port, heartbeat);
 }
 
 /**
@@ -228,12 +353,52 @@ bool MP1Node::recvCallBack(void *env, char *data, int size ) {
  * 				Propagate your membership list
  */
 void MP1Node::nodeLoopOps() {
+    Address addr;
+    memberNode->heartbeat++;
+    // Remove nodes that have timed out past TREMOVE
+    for (std::vector<MemberListEntry>::iterator it = memberNode->memberList.begin(); it != memberNode->memberList.end();) {
+        addressFromIdAndPort(&addr, it->getid(), it->getport());
+        // Update own hearbeat
+        if (addr == memberNode->addr) {
+            it->setheartbeat(memberNode->heartbeat);
+            it->settimestamp(par->getcurrtime());
+        }
+        
+        // check timestamp of last membership update
+        // If past the timeout period then we remove
+        if (par->getcurrtime() - it->gettimestamp() > TREMOVE) {
+            // cout<<"last timestamp: " << it->gettimestamp() << " - Current: "<< par->getcurrtime() << " removing node: ";
+            // printAddress(&addr);
+            // cout<<"From list of node: ";
+            // printAddress(&memberNode->addr);
+            memberNode->nnb--;
+            log->logNodeRemove(&memberNode->addr, &addr);
+            memberNode->memberList.erase(it);
+        } else {
+            ++it;
+        }
 
-	/*
-	 * Your code goes here
-	 */
+    }
 
-    return;
+    memberNode->pingCounter--;
+
+    if (memberNode->pingCounter == 0) {
+        memberNode->pingCounter = TFAIL;
+        gossipToAllNodes();
+    }
+}
+
+void MP1Node::gossipToAllNodes() {
+    Address addr;
+    for (std::vector<MemberListEntry>::iterator it = memberNode->memberList.begin(); it != memberNode->memberList.end(); ++it) {
+        addressFromIdAndPort(&addr, it->getid(), it->getport());
+        gossipMembershipToNode(MEMSHPLIST, &addr);
+    }
+}
+
+void MP1Node::addressFromIdAndPort(Address *addr, int id, short port) {
+    memcpy(&addr->addr[0], &id,  sizeof(int));
+    memcpy(&addr->addr[4], &port, sizeof(short));
 }
 
 /**
