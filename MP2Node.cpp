@@ -366,6 +366,33 @@ void MP2Node::checkMessages()
 		/*
 		 * Handle the message types here
 		 */
+
+		Message msg(message);
+
+		switch (msg.type)
+		{
+		case CREATE:
+			handleCreate(msg);
+			break;
+		case READ:
+			handleRead(msg);
+			break;
+		case UPDATE:
+			handleUpdate(msg);
+			break;
+		case DELETE:
+			handleDelete(msg);
+			break;
+		case REPLY:
+			handleReply(msg);
+			break;
+		case READREPLY:
+			handleReadReply(msg);
+			break;
+		default:
+			cout << "Unrecognized Message Type" << endl;
+			break;
+		}
 	}
 
 	/*
@@ -373,6 +400,34 @@ void MP2Node::checkMessages()
 	 * get QUORUM replies
 	 */
 }
+
+void MP2Node::handleCreate(Message msg)
+{
+	bool success = createKeyValue(msg.key, msg.value, msg.replica);
+	Address myAddr = memberNode->addr;
+
+	if (success)
+	{
+		log->logCreateSuccess(&myAddr, false, msg.transID, msg.key, msg.value);
+	}
+	else
+	{
+		log->logCreateFail(&myAddr, false, msg.transID, msg.key, msg.value);
+	}
+
+	Message createReply(msg.transID, myAddr, REPLY, success);
+	emulNet->ENsend(&myAddr, &msg.fromAddr, createReply.toString());
+}
+
+void MP2Node::handleRead(Message msg) {}
+
+void MP2Node::handleUpdate(Message msg) {}
+
+void MP2Node::handleDelete(Message msg) {}
+
+void MP2Node::handleReply(Message msg) {}
+
+void MP2Node::handleReadReply(Message msg) {}
 
 /**
  * FUNCTION NAME: findNodes

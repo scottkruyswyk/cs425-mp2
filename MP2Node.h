@@ -19,6 +19,12 @@
 #include "Message.h"
 #include "Queue.h"
 
+typedef struct TransactionEntry {
+	string key;
+	int successCount;
+	int failCount;
+}TransactionEntry;
+
 /**
  * CLASS NAME: MP2Node
  *
@@ -47,6 +53,8 @@ private:
 	EmulNet * emulNet;
 	// Object of Log
 	Log * log;
+	// dictionary of all transactions that have occurred; used to track number of response messages from replicas
+	map<int, TransactionEntry> transactionLog;
 
 public:
 	MP2Node(Member *memberNode, Params *par, EmulNet *emulNet, Log *log, Address *addressOfMember);
@@ -55,6 +63,12 @@ public:
 	}
 
 	ReplicaType getReplicaType(int index);
+	void handleCreate(Message msg);
+	void handleRead(Message msg);
+	void handleUpdate(Message msg);
+	void handleDelete(Message msg);
+	void handleReply(Message msg);
+	void handleReadReply(Message msg);
 
 	// ring functionalities
 	void updateRing();
