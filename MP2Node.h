@@ -54,6 +54,8 @@ public:
 		return this->memberNode;
 	}
 
+	ReplicaType getReplicaType(int index);
+
 	// ring functionalities
 	void updateRing();
 	vector<Node> getMembershipList();

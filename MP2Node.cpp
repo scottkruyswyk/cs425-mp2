@@ -142,6 +142,7 @@ void MP2Node::clientCreate(string key, string value)
 	 */
 	int transaction_id = g_transID++;
 	vector<Node> replicas = findNodes(key);
+	Address myAddr = memberNode->addr.getAddress();
 
 	for (int i = 0; i < replicas.size(); i++)
 	{
@@ -159,8 +160,24 @@ void MP2Node::clientCreate(string key, string value)
 			replicaType = TERTIARY;
 		}
 
-		Message msg = Message(transaction_id, memberNode->addr, CREATE, key, value, replicaType);
-		emulNet->ENsend(&memberNode->addr, replicas[i].getAddress(), msg.toString());
+		Message msg = Message(transaction_id, myAddr, CREATE, key, value, replicaType);
+		emulNet->ENsend(&myAddr, replicas[i].getAddress(), msg.toString());
+	}
+}
+
+ReplicaType MP2Node::getReplicaType(int index)
+{
+	if (index == 0)
+	{
+		return PRIMARY;
+	}
+	else if (index == 1)
+	{
+		return SECONDARY;
+	}
+	else
+	{
+		return TERTIARY;
 	}
 }
 
@@ -179,8 +196,15 @@ void MP2Node::clientRead(string key)
 	 * Implement this
 	 */
 
-	// Message(int _transID, Address _fromAddr, MessageType _type, string _key)
+	int transaction_id = g_transID++;
+	Address myAddr = memberNode->addr.getAddress();
+	Message msg = Message(transaction_id, myAddr, READ, key);
+	vector<Node> replicas = findNodes(key);
 
+	for (int i = 0; i < replicas.size(); i++)
+	{
+		emulNet->ENsend(&myAddr, replicas[i].getAddress(), msg.toString());
+	}
 }
 
 /**
@@ -197,6 +221,18 @@ void MP2Node::clientUpdate(string key, string value)
 	/*
 	 * Implement this
 	 */
+
+	int transaction_id = g_transID++;
+	Address myAddr = memberNode->addr.getAddress();
+	vector<Node> replicas = findNodes(key);
+
+	for (int i = 0; i < replicas.size(); i++)
+	{
+		ReplicaType replicaType = getReplicaType(i);
+		// Message(int _transID, Address _fromAddr, MessageType _type, string _key, string _value, ReplicaType _replica);
+		Message msg = Message(transaction_id, myAddr, UPDATE, key, value, replicaType);
+		emulNet->ENsend(&myAddr, replicas[i].getAddress(), msg.toString());
+	}
 }
 
 /**
@@ -213,6 +249,17 @@ void MP2Node::clientDelete(string key)
 	/*
 	 * Implement this
 	 */
+	int transaction_id = g_transID++;
+	Address myAddr = memberNode->addr.getAddress();
+	vector<Node> replicas = findNodes(key);
+
+	// Message(int _transID, Address _fromAddr, MessageType _type, string _key);
+	Message msg = Message(transaction_id, myAddr, DELETE, key);
+
+	for (int i = 0; i < replicas.size(); i++)
+	{
+		emulNet->ENsend(&myAddr, replicas[i].getAddress(), msg.toString());
+	}
 }
 
 /**
