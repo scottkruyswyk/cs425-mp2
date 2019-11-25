@@ -8,7 +8,8 @@
 /**
  * constructor
  */
-MP2Node::MP2Node(Member *memberNode, Params *par, EmulNet * emulNet, Log * log, Address * address) {
+MP2Node::MP2Node(Member *memberNode, Params *par, EmulNet *emulNet, Log *log, Address *address)
+{
 	this->memberNode = memberNode;
 	this->par = par;
 	this->emulNet = emulNet;
@@ -20,7 +21,8 @@ MP2Node::MP2Node(Member *memberNode, Params *par, EmulNet * emulNet, Log * log, 
 /**
  * Destructor
  */
-MP2Node::~MP2Node() {
+MP2Node::~MP2Node()
+{
 	delete ht;
 	delete memberNode;
 }
@@ -34,7 +36,8 @@ MP2Node::~MP2Node() {
  * 				2) Constructs the ring based on the membership list
  * 				3) Calls the Stabilization Protocol
  */
-void MP2Node::updateRing() {
+void MP2Node::updateRing()
+{
 	/*
 	 * Implement this. Parts of it are already implemented
 	 */
@@ -52,11 +55,33 @@ void MP2Node::updateRing() {
 	// Sort the list based on the hashCode
 	sort(curMemList.begin(), curMemList.end());
 
-
 	/*
 	 * Step 3: Run the stabilization protocol IF REQUIRED
 	 */
 	// Run stabilization protocol if the hash table size is greater than zero and if there has been a changed in the ring
+	bool ringChanged = false;
+	// different length guarantees the change
+	if (ring.size() != curMemList.size())
+	{
+		ringChanged = true;
+	}
+	// If same length, go through sorted list and look for changes
+	else
+	{
+		for (int i = 0; i < ring.size(); i++)
+		{
+			if (ring[i].getHashCode() != curMemList[i].getHashCode())
+			{
+				ringChanged = true;
+			}
+		}
+	}
+
+	if (ringChanged)
+	{
+		ring = curMemList;
+		stabilizationProtocol();
+	}
 }
 
 /**
@@ -69,10 +94,12 @@ void MP2Node::updateRing() {
  * 				a) Address of the node
  * 				b) Hash code obtained by consistent hashing of the Address
  */
-vector<Node> MP2Node::getMembershipList() {
+vector<Node> MP2Node::getMembershipList()
+{
 	unsigned int i;
 	vector<Node> curMemList;
-	for ( i = 0 ; i < this->memberNode->memberList.size(); i++ ) {
+	for (i = 0; i < this->memberNode->memberList.size(); i++)
+	{
 		Address addressOfThisMember;
 		int id = this->memberNode->memberList.at(i).getid();
 		short port = this->memberNode->memberList.at(i).getport();
@@ -92,10 +119,11 @@ vector<Node> MP2Node::getMembershipList() {
  * RETURNS:
  * size_t position on the ring
  */
-size_t MP2Node::hashFunction(string key) {
+size_t MP2Node::hashFunction(string key)
+{
 	std::hash<string> hashFunc;
 	size_t ret = hashFunc(key);
-	return ret%RING_SIZE;
+	return ret % RING_SIZE;
 }
 
 /**
@@ -107,10 +135,33 @@ size_t MP2Node::hashFunction(string key) {
  * 				2) Finds the replicas of this key
  * 				3) Sends a message to the replica
  */
-void MP2Node::clientCreate(string key, string value) {
+void MP2Node::clientCreate(string key, string value)
+{
 	/*
 	 * Implement this
 	 */
+	int transaction_id = g_transID++;
+	vector<Node> replicas = findNodes(key);
+
+	for (int i = 0; i < replicas.size(); i++)
+	{
+		ReplicaType replicaType;
+		if (i == 0)
+		{
+			replicaType = PRIMARY;
+		}
+		else if (i == 1)
+		{
+			replicaType = SECONDARY;
+		}
+		else
+		{
+			replicaType = TERTIARY;
+		}
+
+		Message msg = Message(transaction_id, memberNode->addr, CREATE, key, value, replicaType);
+		emulNet->ENsend(&memberNode->addr, replicas[i].getAddress(), msg.toString());
+	}
 }
 
 /**
@@ -122,10 +173,14 @@ void MP2Node::clientCreate(string key, string value) {
  * 				2) Finds the replicas of this key
  * 				3) Sends a message to the replica
  */
-void MP2Node::clientRead(string key){
+void MP2Node::clientRead(string key)
+{
 	/*
 	 * Implement this
 	 */
+
+	// Message(int _transID, Address _fromAddr, MessageType _type, string _key)
+
 }
 
 /**
@@ -137,7 +192,8 @@ void MP2Node::clientRead(string key){
  * 				2) Finds the replicas of this key
  * 				3) Sends a message to the replica
  */
-void MP2Node::clientUpdate(string key, string value){
+void MP2Node::clientUpdate(string key, string value)
+{
 	/*
 	 * Implement this
 	 */
@@ -152,7 +208,8 @@ void MP2Node::clientUpdate(string key, string value){
  * 				2) Finds the replicas of this key
  * 				3) Sends a message to the replica
  */
-void MP2Node::clientDelete(string key){
+void MP2Node::clientDelete(string key)
+{
 	/*
 	 * Implement this
 	 */
@@ -166,7 +223,8 @@ void MP2Node::clientDelete(string key){
  * 			   	1) Inserts key value into the local hash table
  * 			   	2) Return true or false based on success or failure
  */
-bool MP2Node::createKeyValue(string key, string value, ReplicaType replica) {
+bool MP2Node::createKeyValue(string key, string value, ReplicaType replica)
+{
 	/*
 	 * Implement this
 	 */
@@ -181,7 +239,8 @@ bool MP2Node::createKeyValue(string key, string value, ReplicaType replica) {
  * 			    1) Read key from local hash table
  * 			    2) Return value
  */
-string MP2Node::readKey(string key) {
+string MP2Node::readKey(string key)
+{
 	/*
 	 * Implement this
 	 */
@@ -196,7 +255,8 @@ string MP2Node::readKey(string key) {
  * 				1) Update the key to the new value in the local hash table
  * 				2) Return true or false based on success or failure
  */
-bool MP2Node::updateKeyValue(string key, string value, ReplicaType replica) {
+bool MP2Node::updateKeyValue(string key, string value, ReplicaType replica)
+{
 	/*
 	 * Implement this
 	 */
@@ -211,7 +271,8 @@ bool MP2Node::updateKeyValue(string key, string value, ReplicaType replica) {
  * 				1) Delete the key from the local hash table
  * 				2) Return true or false based on success or failure
  */
-bool MP2Node::deletekey(string key) {
+bool MP2Node::deletekey(string key)
+{
 	/*
 	 * Implement this
 	 */
@@ -226,11 +287,12 @@ bool MP2Node::deletekey(string key) {
  * 				1) Pops messages from the queue
  * 				2) Handles the messages according to message types
  */
-void MP2Node::checkMessages() {
+void MP2Node::checkMessages()
+{
 	/*
 	 * Implement this. Parts of it are already implemented
 	 */
-	char * data;
+	char *data;
 	int size;
 
 	/*
@@ -238,7 +300,8 @@ void MP2Node::checkMessages() {
 	 */
 
 	// dequeue all messages and handle them
-	while ( !memberNode->mp2q.empty() ) {
+	while (!memberNode->mp2q.empty())
+	{
 		/*
 		 * Pop a message from the queue
 		 */
@@ -251,7 +314,6 @@ void MP2Node::checkMessages() {
 		/*
 		 * Handle the message types here
 		 */
-
 	}
 
 	/*
@@ -266,24 +328,30 @@ void MP2Node::checkMessages() {
  * DESCRIPTION: Find the replicas of the given keyfunction
  * 				This function is responsible for finding the replicas of a key
  */
-vector<Node> MP2Node::findNodes(string key) {
+vector<Node> MP2Node::findNodes(string key)
+{
 	size_t pos = hashFunction(key);
 	vector<Node> addr_vec;
-	if (ring.size() >= 3) {
+	if (ring.size() >= 3)
+	{
 		// if pos <= min || pos > max, the leader is the min
-		if (pos <= ring.at(0).getHashCode() || pos > ring.at(ring.size()-1).getHashCode()) {
+		if (pos <= ring.at(0).getHashCode() || pos > ring.at(ring.size() - 1).getHashCode())
+		{
 			addr_vec.emplace_back(ring.at(0));
 			addr_vec.emplace_back(ring.at(1));
 			addr_vec.emplace_back(ring.at(2));
 		}
-		else {
+		else
+		{
 			// go through the ring until pos <= node
-			for (int i=1; i<ring.size(); i++){
+			for (int i = 1; i < ring.size(); i++)
+			{
 				Node addr = ring.at(i);
-				if (pos <= addr.getHashCode()) {
+				if (pos <= addr.getHashCode())
+				{
 					addr_vec.emplace_back(addr);
-					addr_vec.emplace_back(ring.at((i+1)%ring.size()));
-					addr_vec.emplace_back(ring.at((i+2)%ring.size()));
+					addr_vec.emplace_back(ring.at((i + 1) % ring.size()));
+					addr_vec.emplace_back(ring.at((i + 2) % ring.size()));
 					break;
 				}
 			}
@@ -297,13 +365,16 @@ vector<Node> MP2Node::findNodes(string key) {
  *
  * DESCRIPTION: Receive messages from EmulNet and push into the queue (mp2q)
  */
-bool MP2Node::recvLoop() {
-    if ( memberNode->bFailed ) {
-    	return false;
-    }
-    else {
-    	return emulNet->ENrecv(&(memberNode->addr), this->enqueueWrapper, NULL, 1, &(memberNode->mp2q));
-    }
+bool MP2Node::recvLoop()
+{
+	if (memberNode->bFailed)
+	{
+		return false;
+	}
+	else
+	{
+		return emulNet->ENrecv(&(memberNode->addr), this->enqueueWrapper, NULL, 1, &(memberNode->mp2q));
+	}
 }
 
 /**
@@ -311,10 +382,12 @@ bool MP2Node::recvLoop() {
  *
  * DESCRIPTION: Enqueue the message from Emulnet into the queue of MP2Node
  */
-int MP2Node::enqueueWrapper(void *env, char *buff, int size) {
+int MP2Node::enqueueWrapper(void *env, char *buff, int size)
+{
 	Queue q;
 	return q.enqueue((queue<q_elt> *)env, (void *)buff, size);
 }
+
 /**
  * FUNCTION NAME: stabilizationProtocol
  *
@@ -324,7 +397,8 @@ int MP2Node::enqueueWrapper(void *env, char *buff, int size) {
  *				1) Ensures that there are three "CORRECT" replicas of all the keys in spite of failures and joins
  *				Note:- "CORRECT" replicas implies that every key is replicated in its two neighboring nodes in the ring
  */
-void MP2Node::stabilizationProtocol() {
+void MP2Node::stabilizationProtocol()
+{
 	/*
 	 * Implement this
 	 */
