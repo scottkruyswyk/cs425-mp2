@@ -20,7 +20,6 @@
 #include "Queue.h"
 
 typedef struct TransactionEntry {
-	string key;
 	int successCount;
 	int failCount;
 }TransactionEntry;

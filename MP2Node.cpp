@@ -42,7 +42,6 @@ void MP2Node::updateRing()
 	 * Implement this. Parts of it are already implemented
 	 */
 	vector<Node> curMemList;
-	bool change = false;
 
 	/*
 	 *  Step 1. Get the current membership list from Membership Protocol / MP1
@@ -143,6 +142,10 @@ void MP2Node::clientCreate(string key, string value)
 	int transaction_id = g_transID++;
 	vector<Node> replicas = findNodes(key);
 	Address myAddr = memberNode->addr.getAddress();
+	TransactionEntry t;
+	t.failCount = 0;
+	t.successCount = 0;
+	transactionLog.emplace(transaction_id, t);
 
 	for (int i = 0; i < replicas.size(); i++)
 	{
@@ -197,6 +200,11 @@ void MP2Node::clientRead(string key)
 	 */
 
 	int transaction_id = g_transID++;
+	TransactionEntry t;
+	t.failCount = 0;
+	t.successCount = 0;
+	transactionLog.emplace(transaction_id, t);
+
 	Address myAddr = memberNode->addr.getAddress();
 	Message msg = Message(transaction_id, myAddr, READ, key);
 	vector<Node> replicas = findNodes(key);
@@ -223,6 +231,11 @@ void MP2Node::clientUpdate(string key, string value)
 	 */
 
 	int transaction_id = g_transID++;
+	TransactionEntry t;
+	t.failCount = 0;
+	t.successCount = 0;
+	transactionLog.emplace(transaction_id, t);
+
 	Address myAddr = memberNode->addr.getAddress();
 	vector<Node> replicas = findNodes(key);
 
@@ -250,6 +263,11 @@ void MP2Node::clientDelete(string key)
 	 * Implement this
 	 */
 	int transaction_id = g_transID++;
+	TransactionEntry t;
+	t.failCount = 0;
+	t.successCount = 0;
+	transactionLog.emplace(transaction_id, t);
+
 	Address myAddr = memberNode->addr.getAddress();
 	vector<Node> replicas = findNodes(key);
 
@@ -419,11 +437,64 @@ void MP2Node::handleCreate(Message msg)
 	emulNet->ENsend(&myAddr, &msg.fromAddr, createReply.toString());
 }
 
-void MP2Node::handleRead(Message msg) {}
+void MP2Node::handleRead(Message msg)
+{
+	string value = readKey(msg.key);
+	Address myAddr = memberNode->addr;
 
-void MP2Node::handleUpdate(Message msg) {}
+	if (value.empty())
+	{
+		log->logReadFail(&myAddr, false, msg.transID, msg.key);
+	}
+	else
+	{
+		log->logReadSuccess(&myAddr, false, msg.transID, msg.key, value);
+	}
 
-void MP2Node::handleDelete(Message msg) {}
+	// Message(int _transID, Address _fromAddr, string _value);
+	Message readReply(msg.transID, myAddr, value);
+	emulNet->ENsend(&myAddr, &msg.fromAddr, readReply.toString());
+}
+
+void MP2Node::handleUpdate(Message msg)
+{
+	bool success = updateKeyValue(msg.key, msg.value, msg.replica);
+	Address myAddr = memberNode->addr;
+
+	if (success)
+	{
+		log->logUpdateSuccess(&myAddr, false, msg.transID, msg.key, msg.value);
+	}
+	else
+	{
+		log->logUpdateFail(&myAddr, false, msg.transID, msg.key, msg.value);
+	}
+
+	// construct reply message
+	// Message(int _transID, Address _fromAddr, MessageType _type, bool _success);
+	Message updateReply(msg.transID, myAddr, REPLY, success);
+	emulNet->ENsend(&myAddr, &msg.fromAddr, updateReply.toString());
+}
+
+void MP2Node::handleDelete(Message msg)
+{
+	bool success = deletekey(msg.key);
+	Address myAddr = memberNode->addr;
+
+	if (success)
+	{
+		log->logDeleteSuccess(&myAddr, false, msg.transID, msg.key);
+	}
+	else
+	{
+		log->logDeleteFail(&myAddr, false, msg.transID, msg.key);
+	}
+
+	// construct reply message
+	// Message(int _transID, Address _fromAddr, MessageType _type, bool _success);
+	Message deleteReply(msg.transID, myAddr, REPLY, success);
+	emulNet->ENsend(&myAddr, &msg.fromAddr, deleteReply.toString());
+}
 
 void MP2Node::handleReply(Message msg) {}
 
