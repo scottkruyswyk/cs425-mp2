@@ -22,6 +22,9 @@
 typedef struct TransactionEntry {
 	int successCount;
 	int failCount;
+	MessageType transType;
+	string key;
+	string value;
 }TransactionEntry;
 
 /**
@@ -68,6 +71,8 @@ public:
 	void handleDelete(Message msg);
 	void handleReply(Message msg);
 	void handleReadReply(Message msg);
+	void logSuccess(int transID, TransactionEntry entry);
+	void logFailure(int transID, TransactionEntry entry);
 
 	// ring functionalities
 	void updateRing();

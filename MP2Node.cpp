@@ -145,6 +145,9 @@ void MP2Node::clientCreate(string key, string value)
 	TransactionEntry t;
 	t.failCount = 0;
 	t.successCount = 0;
+	t.transType = CREATE;
+	t.key = key;
+	t.value = value;
 	transactionLog.emplace(transaction_id, t);
 
 	for (int i = 0; i < replicas.size(); i++)
@@ -203,6 +206,8 @@ void MP2Node::clientRead(string key)
 	TransactionEntry t;
 	t.failCount = 0;
 	t.successCount = 0;
+	t.transType = READ;
+	t.key = key;
 	transactionLog.emplace(transaction_id, t);
 
 	Address myAddr = memberNode->addr.getAddress();
@@ -234,6 +239,9 @@ void MP2Node::clientUpdate(string key, string value)
 	TransactionEntry t;
 	t.failCount = 0;
 	t.successCount = 0;
+	t.transType = UPDATE;
+	t.key = key;
+	t.value = value;
 	transactionLog.emplace(transaction_id, t);
 
 	Address myAddr = memberNode->addr.getAddress();
@@ -266,6 +274,8 @@ void MP2Node::clientDelete(string key)
 	TransactionEntry t;
 	t.failCount = 0;
 	t.successCount = 0;
+	t.transType = DELETE;
+	t.key = key;
 	transactionLog.emplace(transaction_id, t);
 
 	Address myAddr = memberNode->addr.getAddress();
@@ -496,9 +506,102 @@ void MP2Node::handleDelete(Message msg)
 	emulNet->ENsend(&myAddr, &msg.fromAddr, deleteReply.toString());
 }
 
-void MP2Node::handleReply(Message msg) {}
+void MP2Node::handleReply(Message msg)
+{
+	vector<Node> replicas = findNodes(msg.key);
+	TransactionEntry t = transactionLog.find(msg.transID)->second;
 
-void MP2Node::handleReadReply(Message msg) {}
+	if (msg.success)
+	{
+		t.successCount++;
+	}
+	else
+	{
+		t.failCount++;
+	}
+
+	transactionLog.at(msg.transID) = t;
+
+	// QUORUM of success messages
+	if (t.successCount > (replicas.size() / 2))
+	{
+		logSuccess(msg.transID, t);
+	}
+	else if (t.failCount > (replicas.size() / 2))
+	{
+		logFailure(msg.transID, t);
+	}
+}
+
+void MP2Node::logSuccess(int transID, TransactionEntry entry)
+{
+	Address myAddr = memberNode->addr.getAddress();
+
+	switch (entry.transType)
+	{
+	case CREATE:
+		log->logCreateSuccess(&myAddr, true, transID, entry.key, entry.value);
+		break;
+	case UPDATE:
+		log->logUpdateSuccess(&myAddr, true, transID, entry.key, entry.value);
+		break;
+	case DELETE:
+		log->logDeleteSuccess(&myAddr, true, transID, entry.key);
+		break;
+
+	default:
+		break;
+	}
+}
+
+void MP2Node::logFailure(int transID, TransactionEntry entry)
+{
+	Address myAddr = memberNode->addr.getAddress();
+
+	switch (entry.transType)
+	{
+	case CREATE:
+		log->logCreateFail(&myAddr, true, transID, entry.key, entry.value);
+		break;
+	case UPDATE:
+		log->logUpdateFail(&myAddr, true, transID, entry.key, entry.value);
+		break;
+	case DELETE:
+		log->logDeleteFail(&myAddr, true, transID, entry.key);
+		break;
+
+	default:
+		break;
+	}
+}
+
+void MP2Node::handleReadReply(Message msg)
+{
+	vector<Node> replicas = findNodes(msg.key);
+	TransactionEntry t = transactionLog.find(msg.transID)->second;
+
+	if (msg.success)
+	{
+		t.successCount++;
+	}
+	else
+	{
+		t.failCount++;
+	}
+
+	transactionLog.at(msg.transID) = t;
+
+	Address myAddr = memberNode->addr.getAddress();
+	// QUORUM of success messages
+	if (t.successCount > (replicas.size() / 2))
+	{
+		log->logReadSuccess(&myAddr, true, msg.transID, msg.key, msg.value);
+	}
+	else if (t.failCount > (replicas.size() / 2))
+	{
+		log->logReadFail(&myAddr, true, msg.transID, msg.key);
+	}
+}
 
 /**
  * FUNCTION NAME: findNodes
