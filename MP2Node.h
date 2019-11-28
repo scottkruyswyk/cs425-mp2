@@ -73,6 +73,7 @@ public:
 	void handleReadReply(Message msg);
 	void logSuccess(int transID, TransactionEntry entry);
 	void logFailure(int transID, TransactionEntry entry);
+	bool hasNodeInList(vector<Node> entries, Node node);
 
 	// ring functionalities
 	void updateRing();

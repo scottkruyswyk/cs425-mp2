@@ -686,14 +686,115 @@ void MP2Node::stabilizationProtocol()
 	 * Implement this
 	 */
 
-	// find index of reference to current node to find immediate neighbors
 	int myIndex;
+	vector<Node> nowHasMyReplicas;
+	vector<Node> nowHaveReplicasOf;
+
+	// find index of current node;
+	// from there we can identify the nodes which memberNode is storing replicas for
+	// as well as the nodes replicating memberNode's keys
 	for (int i = 0; i < ring.size(); i++)
 	{
 		if (ring[i].getAddress()->getAddress() == memberNode->addr.getAddress())
 		{
 			myIndex = i;
+			// immediate next neighbor should be SECONDARY
+			int secondaryReplicaIndex = (i + 1) % ring.size();
+			nowHasMyReplicas.push_back(ring[secondaryReplicaIndex]);
+			// 2nd next neighbor should be TERTIARY
+			int tertiaryReplicaIndex = (i + 2) % ring.size();
+			nowHasMyReplicas.push_back(ring[tertiaryReplicaIndex]);
+
+			int primaryOneIndex = (ring.size() + i - 1) % ring.size();
+			int primaryTwoIndex = (ring.size() + i - 2) % ring.size();
+			nowHaveReplicasOf.push_back(ring[primaryOneIndex]);
+			nowHaveReplicasOf.push_back(ring[primaryTwoIndex]);
+
 			break;
 		}
 	}
+
+	/**
+	 * Check for if any PRIMARY nodes are failed;
+	 * 	- if a PRIMARY failed and memberNode was previously SECONDARY, it should become PRIMARY
+	 * 	- if a PRIMARY failed and memberNode was previously TERTIARY, it should become SECONDARY
+	 */
+	for (int i = 0; i < haveReplicasOf.size(); i++)
+	{
+		ReplicaType rt = getReplicaType(i + 1);
+		// If no longer in the replicas list, one of our PRIMARY replicas has failed
+		if (!hasNodeInList(nowHaveReplicasOf, haveReplicasOf[i]))
+		{
+			for (map<string, string>::iterator it = ht->hashTable.begin(); it != ht->hashTable.end(); ++it)
+			{
+				Entry e(it->second);
+				if (e.replica == rt)
+				{
+					ReplicaType newRt;
+					if (rt == SECONDARY)
+					{
+						newRt = PRIMARY;
+					}
+					else
+					{
+						newRt = SECONDARY;
+					}
+
+					updateKeyValue(it->first, e.value, newRt);
+				}
+			}
+		}
+	}
+
+	/**
+	 * Replicate PRIMARY HashTable entries to replicas if necessary
+	 */
+	for (int i = 0; i < nowHasMyReplicas.size(); i++)
+	{
+		ReplicaType rt = getReplicaType(i + 1);
+		MessageType mt;
+		// either there is not an entry at that index currently for the existing replicas,
+		// or it is a different node now
+		if (hasMyReplicas.size() < (i + 1) || hasMyReplicas[i].getAddress()->getAddress() != nowHasMyReplicas[i].getAddress()->getAddress())
+		{
+			// Node was in the list, but is now a different ReplicaType so we have to update the entry's ReplicaType
+			if (hasNodeInList(hasMyReplicas, nowHasMyReplicas[i]))
+			{
+				mt = UPDATE;
+			}
+			// Node is new the the hasMyReplicas list so we have to create the keys on this new replica
+			else
+			{
+				mt = CREATE;
+			}
+
+			// For each HashTable entry that is PRIMARY to the given memberNode
+			// send out the create/update message to the given replica
+			for (map<string, string>::iterator it = ht->hashTable.begin(); it != ht->hashTable.end(); ++it)
+			{
+				Entry e(it->second);
+
+				if (e.replica == PRIMARY)
+				{
+					Message msg(-1, memberNode->addr, mt, it->first, e.value, rt);
+					emulNet->ENsend(&memberNode->addr, nowHasMyReplicas[i].getAddress(), msg.toString());
+				}
+			}
+		}
+	}
+
+	// update our replicas vectors to reflect the current state of the ring
+	hasMyReplicas = nowHasMyReplicas;
+	haveReplicasOf = nowHaveReplicasOf;
+}
+
+bool MP2Node::hasNodeInList(vector<Node> entries, Node node)
+{
+	for (int i = 0; i < entries.size(); i++)
+	{
+		if (entries[i].getAddress() == node.getAddress())
+			return true;
+	}
+
+	return false;
 }
