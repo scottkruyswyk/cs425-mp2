@@ -304,8 +304,8 @@ bool MP2Node::createKeyValue(string key, string value, ReplicaType replica)
 	 * Implement this
 	 */
 	// Insert key, value, replicaType into the hash table
-	// Entry entry(value, par->getcurrtime(), replica);
-	return ht->create(key, value);
+	Entry entry(value, par->getcurrtime(), replica);
+	return ht->create(key, entry.convertToString());
 }
 
 /**
@@ -339,7 +339,8 @@ bool MP2Node::updateKeyValue(string key, string value, ReplicaType replica)
 	 * Implement this
 	 */
 	// Update key in local hash table and return true or false
-	return ht->update(key, value);
+	Entry entry(value, par->getcurrtime(), replica);
+	return ht->update(key, entry.convertToString());
 }
 
 /**
@@ -595,7 +596,8 @@ void MP2Node::handleReadReply(Message msg)
 	// QUORUM of success messages
 	if (t.successCount > (replicas.size() / 2))
 	{
-		log->logReadSuccess(&myAddr, true, msg.transID, msg.key, msg.value);
+		Entry entry(msg.value);
+		log->logReadSuccess(&myAddr, true, msg.transID, msg.key, entry.value);
 	}
 	else if (t.failCount > (replicas.size() / 2))
 	{
@@ -683,4 +685,15 @@ void MP2Node::stabilizationProtocol()
 	/*
 	 * Implement this
 	 */
+
+	// find index of reference to current node to find immediate neighbors
+	int myIndex;
+	for (int i = 0; i < ring.size(); i++)
+	{
+		if (ring[i].getAddress()->getAddress() == memberNode->addr.getAddress())
+		{
+			myIndex = i;
+			break;
+		}
+	}
 }
