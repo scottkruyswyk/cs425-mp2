@@ -509,28 +509,31 @@ void MP2Node::handleDelete(Message msg)
 
 void MP2Node::handleReply(Message msg)
 {
-	vector<Node> replicas = findNodes(msg.key);
-	TransactionEntry t = transactionLog.find(msg.transID)->second;
+	if (msg.transID >= 0)
+	{
+		vector<Node> replicas = findNodes(msg.key);
+		TransactionEntry t = transactionLog.find(msg.transID)->second;
 
-	if (msg.success)
-	{
-		t.successCount++;
-	}
-	else
-	{
-		t.failCount++;
-	}
+		if (msg.success)
+		{
+			t.successCount++;
+		}
+		else
+		{
+			t.failCount++;
+		}
 
-	transactionLog.at(msg.transID) = t;
+		transactionLog.at(msg.transID) = t;
 
-	// QUORUM of success messages
-	if (t.successCount > (replicas.size() / 2))
-	{
-		logSuccess(msg.transID, t);
-	}
-	else if (t.failCount > (replicas.size() / 2))
-	{
-		logFailure(msg.transID, t);
+		// QUORUM of success messages
+		if (t.successCount > (replicas.size() / 2))
+		{
+			logSuccess(msg.transID, t);
+		}
+		else if (t.failCount > (replicas.size() / 2))
+		{
+			logFailure(msg.transID, t);
+		}
 	}
 }
 
@@ -760,11 +763,13 @@ void MP2Node::stabilizationProtocol()
 			// Node was in the list, but is now a different ReplicaType so we have to update the entry's ReplicaType
 			if (hasNodeInList(hasMyReplicas, nowHasMyReplicas[i]))
 			{
+				cout << "Moved positions " << endl;
 				mt = UPDATE;
 			}
 			// Node is new the the hasMyReplicas list so we have to create the keys on this new replica
 			else
 			{
+				cout << "Adding stuff " << endl;
 				mt = CREATE;
 			}
 
