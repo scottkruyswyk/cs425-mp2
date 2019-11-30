@@ -25,6 +25,8 @@ typedef struct TransactionEntry {
 	MessageType transType;
 	string key;
 	string value;
+	bool transactionCommitted;
+	bool transactionFailed;
 }TransactionEntry;
 
 /**

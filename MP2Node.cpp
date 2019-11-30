@@ -305,6 +305,7 @@ bool MP2Node::createKeyValue(string key, string value, ReplicaType replica)
 	 */
 	// Insert key, value, replicaType into the hash table
 	Entry entry(value, par->getcurrtime(), replica);
+	// cout << "Created key " << key << endl;
 	return ht->create(key, entry.convertToString());
 }
 
@@ -523,17 +524,20 @@ void MP2Node::handleReply(Message msg)
 			t.failCount++;
 		}
 
-		transactionLog.at(msg.transID) = t;
-
+		
 		// QUORUM of success messages
-		if (t.successCount > (replicas.size() / 2))
+		if (t.successCount > (replicas.size() / 2) && !t.transactionCommitted)
 		{
+			t.transactionCommitted = true;
 			logSuccess(msg.transID, t);
 		}
-		else if (t.failCount > (replicas.size() / 2))
+		else if (t.failCount > (replicas.size() / 2) && !t.transactionFailed)
 		{
+			t.transactionFailed = true;
 			logFailure(msg.transID, t);
 		}
+
+		transactionLog.at(msg.transID) = t;
 	}
 }
 
@@ -593,19 +597,21 @@ void MP2Node::handleReadReply(Message msg)
 		t.failCount++;
 	}
 
-	transactionLog.at(msg.transID) = t;
-
 	Address myAddr = memberNode->addr.getAddress();
 	// QUORUM of success messages
-	if (t.successCount > (replicas.size() / 2))
+	if (t.successCount > (replicas.size() / 2) && !t.transactionCommitted)
 	{
 		Entry entry(msg.value);
 		log->logReadSuccess(&myAddr, true, msg.transID, msg.key, entry.value);
+		t.transactionCommitted = true;
 	}
-	else if (t.failCount > (replicas.size() / 2))
+	else if (t.failCount > (replicas.size() / 2) && !t.transactionFailed)
 	{
 		log->logReadFail(&myAddr, true, msg.transID, msg.key);
+		t.transactionFailed = true;
 	}
+
+	transactionLog.at(msg.transID) = t;
 }
 
 /**
@@ -763,13 +769,13 @@ void MP2Node::stabilizationProtocol()
 			// Node was in the list, but is now a different ReplicaType so we have to update the entry's ReplicaType
 			if (hasNodeInList(hasMyReplicas, nowHasMyReplicas[i]))
 			{
-				cout << "Moved positions " << endl;
+				// cout << "Moved positions " << endl;
 				mt = UPDATE;
 			}
 			// Node is new the the hasMyReplicas list so we have to create the keys on this new replica
 			else
 			{
-				cout << "Adding stuff " << endl;
+				// cout << "Adding stuff " << endl;
 				mt = CREATE;
 			}
 
