@@ -144,6 +144,7 @@ void MP2Node::clientCreate(string key, string value)
 	Address myAddr = memberNode->addr.getAddress();
 	TransactionEntry t;
 	t.failCount = 0;
+	t.initTimestamp = par->getcurrtime();
 	t.successCount = 0;
 	t.transType = CREATE;
 	t.key = key;
@@ -206,6 +207,7 @@ void MP2Node::clientRead(string key)
 	TransactionEntry t;
 	t.failCount = 0;
 	t.successCount = 0;
+	t.initTimestamp = par->getcurrtime();
 	t.transType = READ;
 	t.key = key;
 	transactionLog.emplace(transaction_id, t);
@@ -239,6 +241,7 @@ void MP2Node::clientUpdate(string key, string value)
 	TransactionEntry t;
 	t.failCount = 0;
 	t.successCount = 0;
+	t.initTimestamp = par->getcurrtime();
 	t.transType = UPDATE;
 	t.key = key;
 	t.value = value;
@@ -274,6 +277,7 @@ void MP2Node::clientDelete(string key)
 	TransactionEntry t;
 	t.failCount = 0;
 	t.successCount = 0;
+	t.initTimestamp = par->getcurrtime();
 	t.transType = DELETE;
 	t.key = key;
 	transactionLog.emplace(transaction_id, t);
@@ -429,6 +433,45 @@ void MP2Node::checkMessages()
 	 * This function should also ensure all READ and UPDATE operation
 	 * get QUORUM replies
 	 */
+
+	failOldTransactions();
+}
+
+void MP2Node::failOldTransactions()
+{
+	// Find all transactions that have not failed or succeeded within the given timeout period
+	// automaticallly fail the transaction
+	for (map<int, TransactionEntry>::iterator it = transactionLog.begin(); it != transactionLog.end(); ++it)
+	{
+		TransactionEntry txn(it->second);
+
+		if ((par->getcurrtime() - txn.initTimestamp) > REQUEST_TIMEOUT && !txn.transactionCommitted && !txn.transactionFailed)
+		{
+			Address myAddr = memberNode->addr;
+
+			switch (txn.transType)
+			{
+			case CREATE:
+				log->logCreateFail(&myAddr, true, it->first, txn.key, txn.value);
+				break;
+			case READ:
+				log->logReadFail(&myAddr, true, it->first, txn.key);
+				break;
+			case UPDATE:
+				log->logUpdateFail(&myAddr, true, it->first, txn.key, txn.value);
+				break;
+			case DELETE:
+				log->logDeleteFail(&myAddr, true, it->first, txn.key);
+				break;
+
+			default:
+				break;
+			}
+
+			txn.transactionFailed = true;
+			transactionLog.at(it->first) = txn;
+		}
+	}
 }
 
 void MP2Node::handleCreate(Message msg)
@@ -524,7 +567,6 @@ void MP2Node::handleReply(Message msg)
 			t.failCount++;
 		}
 
-		
 		// QUORUM of success messages
 		if (t.successCount > (replicas.size() / 2) && !t.transactionCommitted)
 		{

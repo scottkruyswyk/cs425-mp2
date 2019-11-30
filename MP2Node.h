@@ -19,12 +19,15 @@
 #include "Message.h"
 #include "Queue.h"
 
+#define REQUEST_TIMEOUT 10
+
 typedef struct TransactionEntry {
 	int successCount;
 	int failCount;
 	MessageType transType;
 	string key;
 	string value;
+	int initTimestamp;
 	bool transactionCommitted;
 	bool transactionFailed;
 }TransactionEntry;
@@ -76,6 +79,7 @@ public:
 	void logSuccess(int transID, TransactionEntry entry);
 	void logFailure(int transID, TransactionEntry entry);
 	bool hasNodeInList(vector<Node> entries, Node node);
+	void failOldTransactions();
 
 	// ring functionalities
 	void updateRing();
